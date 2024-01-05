@@ -100,15 +100,23 @@ def install(args):
 	print(f"installed mod {args.mod_id}")
 
 def upgrade(args):
-	if args.mod_id != "all":
-		install(args)
-	pass
+	if args.mod_id == MOD_ALL:
+		print("updating all mods")
+		mods = get_mod_ids(args.stellaris_dir)
+	else:
+		print(f"updating mod {args.mod_id}")
+		mods = [args.mod_id]
+
+	cmd = []
+	for mod in mods:
+		cmd.append(f"+workshop_download_item {ST_WORKSHOP_ID} {mod}")
+	cmd = " ".join(cmd)
+	run_steamcmd(args.install_dir, cmd)
 
 def uninstall(args):
 	if not os.path.exists(args.stellaris_dir):
 		print(f"stellaris mod directory '{args.stellaris_dir}' not found, aborting")
 		exit(1)
-	pass
 	
 	mods = args.mod_id == MOD_ALL and get_mod_ids(args.stellaris_dir) or [args.mod_id]
 
