@@ -6,11 +6,11 @@ import shutil
 import subprocess
 
 ST_WORKSHOP_ID = 281990
+MOD_ALL = 'all'
 
 def get_args():
 	args = argparse.ArgumentParser()
 	args.add_argument("operation", help="operation", choices=["install", "uninstall", "upgrade"])
-
 	args.add_argument("mod_id", help="workshop mod id")
 	args.add_argument("-d", "--install-dir", help="workshop installation directory", default=f"{os.environ['HOME']}/.local/share/stmodloader")
 	args.add_argument("-s", "--stellaris-dir", help="stellaris mod directorty", default=f"{os.environ['HOME']}/.local/share/Paradox Interactive/Stellaris/mod")
@@ -34,11 +34,30 @@ def run_steamcmd(install_dir: str, command: str):
 	if proc.returncode != 0:
 		raise RuntimeError("steamcmd failed")
 
+def remove(path: str):
+	try:
+		if os.path.islink(path):
+			os.unlink(path)
+		elif os.path.isdir(path):
+			shutil.rmtree(path)
+		else:
+			os.remove(path)
+	except Exception as e:
+		print(e)
+		print(f"failed to remove file '{path}'")
+		exit(1)
+	
+def get_mod_ids(path: str):
+	is_mod_descriptor = lambda f : not not re.match("steam_\d+\.mod$", f)
+	get_mod_id = lambda f : re.search("\d+", f).group()
+	return list(map(get_mod_id, filter(is_mod_descriptor, os.listdir(path))))
+
 def install(args):
+	print(f"installing mod {args.mod_id}")
+
 	if not os.path.exists(args.install_dir):
 		os.mkdir(args.install_dir)
 
-	print(f"installing mod {args.mod_id}")
 	try:
 		run_steamcmd(args.install_dir, f"+workshop_download_item {ST_WORKSHOP_ID} {args.mod_id}")
 	except RuntimeError:
@@ -56,10 +75,10 @@ def install(args):
 			mod_descriptor = f.read()
 	except Exception as e:
 		print(e)
-		print(f'reading file \'{f"{mod_dir}/descriptor.mod"}\' failed')
+		print(f"failed to read file '{mod_dir}/descriptor.mod'")
 		exit(1)
 	if not re.search("path=", mod_descriptor, flags=re.MULTILINE):
-		mod_descriptor = "\n".join(mod_descriptor, f'path="{mod_path}"')
+		mod_descriptor += f"\n'path={mod_path}'"
 	else:
 		# TODO verify this
 		mod_descriptor = re.sub("path=.+", f'path="{mod_path}"', mod_descriptor, flags=re.MULTILINE)
@@ -70,24 +89,13 @@ def install(args):
 			f.write(mod_descriptor)
 	except Exception as e:
 		print(e)
-		print(f"failed to remove existing file {symlink}")
+		print(f"failed to write mod descriptor file '{symlink}'")
 		exit(1)
 		
 	if os.path.exists(symlink):
-		print(f"removing existing file {symlink}")
-		try:
-			if os.path.islink(symlink):
-				os.unlink(symlink)
-			elif os.path.isdir(symlink):
-				shutil.rmtree(symlink)
-			else:
-				os.remove(symlink)
-		except Exception as e:
-			print(e)
-			print(f"failed to remove existing file {symlink}")
-			exit(1)
+		remove(symlink)
 
-	print(f"creating symlink {symlink}")
+	print(f"creating symlink '{symlink}'")
 	os.symlink(mod_dir, symlink, target_is_directory=True)
 	print(f"installed mod {args.mod_id}")
 
@@ -97,7 +105,26 @@ def upgrade(args):
 	pass
 
 def uninstall(args):
+	if not os.path.exists(args.stellaris_dir):
+		print(f"stellaris mod directory '{args.stellaris_dir}' not found, aborting")
+		exit(1)
 	pass
+	
+	mods = args.mod_id == MOD_ALL and get_mod_ids(args.stellaris_dir) or [args.mod_id]
+
+	for mod in mods:
+		print(f"uninstalling mod {mod}")
+
+		symlink = f"{args.stellaris_dir}/steam_{mod}"
+		if os.path.exists(symlink):
+			print(f"removing symlink '{symlink}'")
+			remove(symlink)
+		mod_descriptor = f"{symlink}.mod"
+		if os.path.exists(mod_descriptor):
+			print(f"removing mod descriptor file '{mod_descriptor}'")
+			remove(mod_descriptor)
+		
+		print(f"uninstalled mod {mod}")
 
 def main():
 	args = get_args()
@@ -106,7 +133,8 @@ def main():
 			install(args)
 		case "uninstall":
 			uninstall(args)
-		case "purge":
-			purge(args)
+		case "upgrade":
+			upgrade(args)
+	print("done")
 
 main()
